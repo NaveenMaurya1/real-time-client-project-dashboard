@@ -1,0 +1,44 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: client-dashboard-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: client_dashboard
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  server:
+    build:
+      context: ./Server
+    container_name: client-dashboard-server
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/client_dashboard?schema=public
+      JWT_ACCESS_SECRET: client-dashboard-access-secret-change-this
+      JWT_REFRESH_SECRET: client-dashboard-refresh-secret-change-this
+      ACCESS_TOKEN_EXPIRES_IN: 15m
+      REFRESH_TOKEN_EXPIRES_IN: 7d
+      PORT: 5000
+      CLIENT_URL: http://localhost:5173
+    ports:
+      - "5000:5000"
+
+  client:
+    build:
+      context: ./client
+    container_name: client-dashboard-client
+    restart: unless-stopped
+    depends_on:
+      - server
+    ports:
+      - "5173:80"
+
+volumes:
+  postgres_data:
