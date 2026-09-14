@@ -10,6 +10,10 @@ import {
   updateProject,
 } from "../services/project.service.js";
 
+const getErrorMessage = (error: unknown): string => {
+  return error instanceof Error ? error.message : "";
+};
+
 export const listProjects = async (
   req: AuthRequest,
   res: Response
@@ -36,7 +40,9 @@ export const listProjects = async (
         projects,
       },
     });
-  } catch {
+  } catch (error) {
+    console.error("Failed to fetch projects:", error);
+
     return res.status(500).json({
       success: false,
       error: {
@@ -64,7 +70,7 @@ export const getProject = async (
 
     const projectId = Number(req.params.id);
 
-    if (Number.isNaN(projectId)) {
+    if (!Number.isInteger(projectId) || projectId <= 0) {
       return res.status(400).json({
         success: false,
         error: {
@@ -86,26 +92,30 @@ export const getProject = async (
         project,
       },
     });
-  } catch (error: any) {
-    if (error.message === "Project not found") {
+  } catch (error) {
+    const message = getErrorMessage(error);
+
+    if (message === "Project not found") {
       return res.status(404).json({
         success: false,
         error: {
           code: "PROJECT_NOT_FOUND",
-          message: error.message,
+          message: "Project not found",
         },
       });
     }
 
-    if (error.message.includes("do not have access")) {
+    if (message.includes("do not have access")) {
       return res.status(403).json({
         success: false,
         error: {
           code: "FORBIDDEN",
-          message: error.message,
+          message: "You do not have access to this project",
         },
       });
     }
+
+    console.error("Failed to fetch project:", error);
 
     return res.status(500).json({
       success: false,
@@ -148,10 +158,25 @@ export const create = async (
       });
     }
 
+    const parsedClientId = Number(clientId);
+
+    if (
+      !Number.isInteger(parsedClientId) ||
+      parsedClientId <= 0
+    ) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: "INVALID_CLIENT_ID",
+          message: "Invalid client ID",
+        },
+      });
+    }
+
     const project = await createProject(
       name,
       description,
-      Number(clientId),
+      parsedClientId,
       req.user.userId
     );
 
@@ -161,12 +186,14 @@ export const create = async (
         project,
       },
     });
-  } catch (error: any) {
+  } catch (error) {
+    console.error("Failed to create project:", error);
+
     return res.status(400).json({
       success: false,
       error: {
         code: "CREATE_PROJECT_FAILED",
-        message: error.message,
+        message: "Failed to create project",
       },
     });
   }
@@ -189,6 +216,16 @@ export const update = async (
 
     const projectId = Number(req.params.id);
 
+    if (!Number.isInteger(projectId) || projectId <= 0) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: "INVALID_PROJECT_ID",
+          message: "Invalid project ID",
+        },
+      });
+    }
+
     const project = await updateProject(
       projectId,
       req.user.userId,
@@ -202,26 +239,30 @@ export const update = async (
         project,
       },
     });
-  } catch (error: any) {
-    if (error.message === "Project not found") {
+  } catch (error) {
+    const message = getErrorMessage(error);
+
+    if (message === "Project not found") {
       return res.status(404).json({
         success: false,
         error: {
           code: "PROJECT_NOT_FOUND",
-          message: error.message,
+          message: "Project not found",
         },
       });
     }
 
-    if (error.message.includes("do not have access")) {
+    if (message.includes("do not have access")) {
       return res.status(403).json({
         success: false,
         error: {
           code: "FORBIDDEN",
-          message: error.message,
+          message: "You do not have access to this project",
         },
       });
     }
+
+    console.error("Failed to update project:", error);
 
     return res.status(500).json({
       success: false,
@@ -250,6 +291,16 @@ export const remove = async (
 
     const projectId = Number(req.params.id);
 
+    if (!Number.isInteger(projectId) || projectId <= 0) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: "INVALID_PROJECT_ID",
+          message: "Invalid project ID",
+        },
+      });
+    }
+
     await deleteProject(
       projectId,
       req.user.userId,
@@ -260,26 +311,30 @@ export const remove = async (
       success: true,
       message: "Project deleted successfully",
     });
-  } catch (error: any) {
-    if (error.message === "Project not found") {
+  } catch (error) {
+    const message = getErrorMessage(error);
+
+    if (message === "Project not found") {
       return res.status(404).json({
         success: false,
         error: {
           code: "PROJECT_NOT_FOUND",
-          message: error.message,
+          message: "Project not found",
         },
       });
     }
 
-    if (error.message.includes("do not have access")) {
+    if (message.includes("do not have access")) {
       return res.status(403).json({
         success: false,
         error: {
           code: "FORBIDDEN",
-          message: error.message,
+          message: "You do not have access to this project",
         },
       });
     }
+
+    console.error("Failed to delete project:", error);
 
     return res.status(500).json({
       success: false,

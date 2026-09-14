@@ -35,8 +35,7 @@ export const getDashboard = async (
     }
 
     if (role === "PROJECT_MANAGER") {
-      const data =
-        await getProjectManagerDashboard(userId);
+      const data = await getProjectManagerDashboard(userId);
 
       return res.json({
         success: true,
@@ -45,8 +44,7 @@ export const getDashboard = async (
     }
 
     if (role === "DEVELOPER") {
-      const data =
-        await getDeveloperDashboard(userId);
+      const data = await getDeveloperDashboard(userId);
 
       return res.json({
         success: true,
@@ -67,7 +65,7 @@ export const getDashboard = async (
     return res.status(500).json({
       success: false,
       error: {
-        code: "INTERNAL_SERVER_ERROR",
+        code: "SERVER_ERROR",
         message: "Failed to load dashboard",
       },
     });

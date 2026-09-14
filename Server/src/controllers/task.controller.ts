@@ -9,6 +9,10 @@ import {
   updateTaskStatus,
 } from "../services/task.service.js";
 
+const getErrorMessage = (error: unknown): string => {
+  return error instanceof Error ? error.message : "";
+};
+
 export const listTasks = async (
   req: AuthRequest,
   res: Response
@@ -24,11 +28,11 @@ export const listTasks = async (
       });
     }
 
-   const filters: {
+    const filters: {
       status?: string;
       priority?: string;
       from?: string;
-      to?: string;           
+      to?: string;
     } = {};
 
     if (typeof req.query.status === "string") {
@@ -39,15 +43,15 @@ export const listTasks = async (
       filters.priority = req.query.priority;
     }
 
-    if (typeof req.query.from === "string") {    
+    if (typeof req.query.from === "string") {
       filters.from = req.query.from;
     }
 
-    if (typeof req.query.to === "string") {    
+    if (typeof req.query.to === "string") {
       filters.to = req.query.to;
     }
 
-    const tasks = await getTasks(    
+    const tasks = await getTasks(
       req.user.userId,
       req.user.role,
       filters
@@ -60,7 +64,7 @@ export const listTasks = async (
       },
     });
   } catch (error) {
-    console.error(error);
+    console.error("Failed to fetch tasks:", error);
 
     return res.status(500).json({
       success: false,
@@ -89,7 +93,7 @@ export const getTask = async (
 
     const taskId = Number(req.params.id);
 
-    if (Number.isNaN(taskId)) {
+    if (!Number.isInteger(taskId) || taskId <= 0) {
       return res.status(400).json({
         success: false,
         error: {
@@ -112,17 +116,14 @@ export const getTask = async (
       },
     });
   } catch (error) {
-    const message =
-      error instanceof Error
-        ? error.message
-        : "Failed to fetch task";
+    const message = getErrorMessage(error);
 
     if (message === "Task not found") {
       return res.status(404).json({
         success: false,
         error: {
           code: "TASK_NOT_FOUND",
-          message,
+          message: "Task not found",
         },
       });
     }
@@ -132,12 +133,12 @@ export const getTask = async (
         success: false,
         error: {
           code: "FORBIDDEN",
-          message,
+          message: "You do not have access to this task",
         },
       });
     }
 
-    console.error(error);
+    console.error("Failed to fetch task:", error);
 
     return res.status(500).json({
       success: false,
@@ -166,7 +167,7 @@ export const create = async (
 
     const projectId = Number(req.params.projectId);
 
-    if (Number.isNaN(projectId)) {
+    if (!Number.isInteger(projectId) || projectId <= 0) {
       return res.status(400).json({
         success: false,
         error: {
@@ -200,6 +201,18 @@ export const create = async (
       });
     }
 
+    const developerId = Number(assignedDeveloperId);
+
+    if (!Number.isInteger(developerId) || developerId <= 0) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: "INVALID_DEVELOPER_ID",
+          message: "Invalid developer ID",
+        },
+      });
+    }
+
     const task = await createTask(
       projectId,
       req.user.userId,
@@ -207,9 +220,7 @@ export const create = async (
       {
         title,
         description,
-        assignedDeveloperId: Number(
-          assignedDeveloperId
-        ),
+        assignedDeveloperId: developerId,
         priority,
         dueDate,
       }
@@ -221,38 +232,36 @@ export const create = async (
         task,
       },
     });
-  } catch (error: any) {
-    if (
-      error.message === "Project not found"
-    ) {
+  } catch (error) {
+    const message = getErrorMessage(error);
+
+    if (message === "Project not found") {
       return res.status(404).json({
         success: false,
         error: {
           code: "PROJECT_NOT_FOUND",
-          message: error.message,
+          message: "Project not found",
         },
       });
     }
 
-    if (
-      error.message.includes(
-        "do not have access"
-      )
-    ) {
+    if (message.includes("do not have access")) {
       return res.status(403).json({
         success: false,
         error: {
           code: "FORBIDDEN",
-          message: error.message,
+          message: "You do not have access to this project",
         },
       });
     }
+
+    console.error("Failed to create task:", error);
 
     return res.status(400).json({
       success: false,
       error: {
         code: "CREATE_TASK_FAILED",
-        message: error.message,
+        message: "Failed to create task",
       },
     });
   }
@@ -275,7 +284,7 @@ export const update = async (
 
     const taskId = Number(req.params.id);
 
-    if (Number.isNaN(taskId)) {
+    if (!Number.isInteger(taskId) || taskId <= 0) {
       return res.status(400).json({
         success: false,
         error: {
@@ -293,39 +302,51 @@ export const update = async (
       dueDate,
     } = req.body;
 
-   const updateData: {
-    title?: string;
-    description?: string;
-    assignedDeveloperId?: number;
-    priority?: string;
-    dueDate?: string;
+    const updateData: {
+      title?: string;
+      description?: string;
+      assignedDeveloperId?: number;
+      priority?: string;
+      dueDate?: string;
     } = {};
 
-   if (title !== undefined) {
-     updateData.title = title;
+    if (title !== undefined) {
+      updateData.title = title;
     }
 
-   if (description !== undefined) {
-     updateData.description = description;
+    if (description !== undefined) {
+      updateData.description = description;
     }
 
     if (assignedDeveloperId !== undefined) {
-     updateData.assignedDeveloperId = Number(assignedDeveloperId);
+      const developerId = Number(assignedDeveloperId);
+
+      if (!Number.isInteger(developerId) || developerId <= 0) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: "INVALID_DEVELOPER_ID",
+            message: "Invalid developer ID",
+          },
+        });
+      }
+
+      updateData.assignedDeveloperId = developerId;
     }
 
-   if (priority !== undefined) {
-     updateData.priority = priority;
-   }
+    if (priority !== undefined) {
+      updateData.priority = priority;
+    }
 
-   if (dueDate !== undefined) {
-     updateData.dueDate = dueDate;
-     }
+    if (dueDate !== undefined) {
+      updateData.dueDate = dueDate;
+    }
 
     const task = await updateTask(
-     taskId,
-     req.user.userId,
-     req.user.role,
-     updateData
+      taskId,
+      req.user.userId,
+      req.user.role,
+      updateData
     );
 
     return res.json({
@@ -335,17 +356,14 @@ export const update = async (
       },
     });
   } catch (error) {
-    const message =
-      error instanceof Error
-        ? error.message
-        : "Failed to update task";
+    const message = getErrorMessage(error);
 
     if (message === "Task not found") {
       return res.status(404).json({
         success: false,
         error: {
           code: "TASK_NOT_FOUND",
-          message,
+          message: "Task not found",
         },
       });
     }
@@ -355,12 +373,12 @@ export const update = async (
         success: false,
         error: {
           code: "FORBIDDEN",
-          message,
+          message: "You do not have access to this task",
         },
       });
     }
 
-    console.error(error);
+    console.error("Failed to update task:", error);
 
     return res.status(500).json({
       success: false,
@@ -389,7 +407,7 @@ export const updateStatus = async (
 
     const taskId = Number(req.params.id);
 
-    if (Number.isNaN(taskId)) {
+    if (!Number.isInteger(taskId) || taskId <= 0) {
       return res.status(400).json({
         success: false,
         error: {
@@ -425,46 +443,43 @@ export const updateStatus = async (
         activity: result.activity,
       },
     });
-  } catch (error: any) {
-    console.error(
-      "Failed to update task status:",
-      error
-    );
+  } catch (error) {
+    const message = getErrorMessage(error);
 
-    if (error.message === "Task not found") {
+    if (message === "Task not found") {
       return res.status(404).json({
         success: false,
         error: {
           code: "TASK_NOT_FOUND",
-          message: error.message,
+          message: "Task not found",
         },
       });
     }
 
     if (
-      error.message.includes("access to this task") ||
-      error.message.includes(
-        "only update tasks assigned"
-      )
+      message.includes("access to this task") ||
+      message.includes("only update tasks assigned")
     ) {
       return res.status(403).json({
         success: false,
         error: {
           code: "FORBIDDEN",
-          message: error.message,
+          message: "You do not have permission to update this task",
         },
       });
     }
 
-    if (error.message === "Invalid task status") {
+    if (message === "Invalid task status") {
       return res.status(400).json({
         success: false,
         error: {
           code: "INVALID_STATUS",
-          message: error.message,
+          message: "Invalid task status",
         },
       });
     }
+
+    console.error("Failed to update task status:", error);
 
     return res.status(500).json({
       success: false,

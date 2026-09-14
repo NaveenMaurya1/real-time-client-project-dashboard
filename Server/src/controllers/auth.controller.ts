@@ -25,11 +25,7 @@ export const register = async (
       });
     }
 
-    const user = await registerUser(
-      name,
-      email,
-      password
-    );
+    const user = await registerUser(name, email, password);
 
     return res.status(201).json({
       success: true,
@@ -37,12 +33,14 @@ export const register = async (
         user,
       },
     });
-  } catch (error: any) {
+  } catch (error) {
+    console.error("Registration error:", error);
+
     return res.status(400).json({
       success: false,
       error: {
         code: "REGISTER_FAILED",
-        message: error.message,
+        message: "Registration failed",
       },
     });
   }
@@ -84,12 +82,14 @@ export const login = async (
         user: result.user,
       },
     });
-  } catch (error: any) {
+  } catch (error) {
+    console.error("Login error:", error);
+
     return res.status(401).json({
       success: false,
       error: {
         code: "LOGIN_FAILED",
-        message: error.message,
+        message: "Invalid email or password",
       },
     });
   }
@@ -120,12 +120,14 @@ export const refresh = async (
         accessToken: result.accessToken,
       },
     });
-  } catch (error: any) {
+  } catch (error) {
+    console.error("Refresh token error:", error);
+
     return res.status(401).json({
       success: false,
       error: {
         code: "REFRESH_FAILED",
-        message: error.message,
+        message: "Invalid or expired refresh token",
       },
     });
   }
@@ -142,13 +144,19 @@ export const logout = async (
       await logoutUser(refreshToken);
     }
 
-    res.clearCookie("refreshToken");
+    res.clearCookie("refreshToken", {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+    });
 
     return res.json({
       success: true,
       message: "Logged out successfully",
     });
-  } catch {
+  } catch (error) {
+    console.error("Logout error:", error);
+
     return res.status(500).json({
       success: false,
       error: {
@@ -192,7 +200,9 @@ export const me = async (
         user,
       },
     });
-  } catch {
+  } catch (error) {
+    console.error("Get current user error:", error);
+
     return res.status(500).json({
       success: false,
       error: {

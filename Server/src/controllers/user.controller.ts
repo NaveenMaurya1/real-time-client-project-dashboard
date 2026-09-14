@@ -19,20 +19,19 @@ export const listDevelopers = async (
       });
     }
 
-    const developers =
-      await prisma.user.findMany({
-        where: {
-         role: "DEVELOPER",
-        },
-        select: {
-          id: true,
-          name: true,
-          email: true,
-        },
-        orderBy: {
-          name: "asc",
-        },
-      });
+    const developers = await prisma.user.findMany({
+      where: {
+        role: "DEVELOPER",
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+      },
+      orderBy: {
+        name: "asc",
+      },
+    });
 
     return res.json({
       success: true,
@@ -40,13 +39,14 @@ export const listDevelopers = async (
         developers,
       },
     });
-  } catch {
+  } catch (error) {
+    console.error("Failed to fetch developers:", error);
+
     return res.status(500).json({
       success: false,
       error: {
         code: "SERVER_ERROR",
-        message:
-          "Unable to fetch developers",
+        message: "Unable to fetch developers",
       },
     });
   }

@@ -32,7 +32,7 @@ export const getActivities = async (
     return res.status(500).json({
       success: false,
       error: {
-        code: "INTERNAL_SERVER_ERROR",
+        code: "SERVER_ERROR",
         message: "Failed to fetch activities",
       },
     });

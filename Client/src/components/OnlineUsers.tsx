@@ -18,27 +18,18 @@ export default function OnlineUsers({
     const socket = createSocket(accessToken);
 
     socket.on("connect", () => {
-      console.log(
-        "Presence socket connected"
-      );
+      // Presence socket connected
     });
 
     socket.on(
       "presence:count",
       (count: number) => {
-        console.log(
-          "Online users:",
-          count
-        );
-
         onCountChange(count);
       }
     );
 
     socket.on("disconnect", () => {
-      console.log(
-        "Presence socket disconnected"
-      );
+      // Presence socket disconnected
     });
 
     socket.on(
@@ -52,6 +43,11 @@ export default function OnlineUsers({
     );
 
     return () => {
+      socket.off("connect");
+      socket.off("presence:count");
+      socket.off("disconnect");
+      socket.off("connect_error");
+
       socket.disconnect();
     };
   }, [accessToken, onCountChange]);

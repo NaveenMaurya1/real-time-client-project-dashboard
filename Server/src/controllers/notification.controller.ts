@@ -32,15 +32,12 @@ export const listNotifications = async (
       data: notifications,
     });
   } catch (error) {
-    console.error(
-      "List notifications error:",
-      error
-    );
+    console.error("List notifications error:", error);
 
     return res.status(500).json({
       success: false,
       error: {
-        code: "INTERNAL_SERVER_ERROR",
+        code: "SERVER_ERROR",
         message: "Failed to fetch notifications",
       },
     });
@@ -62,10 +59,9 @@ export const unreadCount = async (
       });
     }
 
-    const count =
-      await getUnreadNotificationCount(
-        req.user.userId
-      );
+    const count = await getUnreadNotificationCount(
+      req.user.userId
+    );
 
     return res.json({
       success: true,
@@ -82,7 +78,7 @@ export const unreadCount = async (
     return res.status(500).json({
       success: false,
       error: {
-        code: "INTERNAL_SERVER_ERROR",
+        code: "SERVER_ERROR",
         message: "Failed to fetch unread count",
       },
     });
@@ -104,25 +100,25 @@ export const markAsRead = async (
       });
     }
 
-    const notificationId = Number(
-      req.params.id
-    );
+    const notificationId = Number(req.params.id);
 
-    if (Number.isNaN(notificationId)) {
+    if (
+      !Number.isInteger(notificationId) ||
+      notificationId <= 0
+    ) {
       return res.status(400).json({
         success: false,
         error: {
-          code: "INVALID_ID",
+          code: "INVALID_NOTIFICATION_ID",
           message: "Invalid notification ID",
         },
       });
     }
 
-    const notification =
-      await markNotificationAsRead(
-        notificationId,
-        req.user.userId
-      );
+    const notification = await markNotificationAsRead(
+      notificationId,
+      req.user.userId
+    );
 
     return res.json({
       success: true,
@@ -136,7 +132,7 @@ export const markAsRead = async (
       return res.status(404).json({
         success: false,
         error: {
-          code: "NOT_FOUND",
+          code: "NOTIFICATION_NOT_FOUND",
           message: "Notification not found",
         },
       });
@@ -150,7 +146,7 @@ export const markAsRead = async (
     return res.status(500).json({
       success: false,
       error: {
-        code: "INTERNAL_SERVER_ERROR",
+        code: "SERVER_ERROR",
         message: "Failed to mark notification as read",
       },
     });
@@ -172,10 +168,9 @@ export const markAllAsRead = async (
       });
     }
 
-    const result =
-      await markAllNotificationsAsRead(
-        req.user.userId
-      );
+    const result = await markAllNotificationsAsRead(
+      req.user.userId
+    );
 
     return res.json({
       success: true,
@@ -192,7 +187,7 @@ export const markAllAsRead = async (
     return res.status(500).json({
       success: false,
       error: {
-        code: "INTERNAL_SERVER_ERROR",
+        code: "SERVER_ERROR",
         message: "Failed to mark notifications as read",
       },
     });

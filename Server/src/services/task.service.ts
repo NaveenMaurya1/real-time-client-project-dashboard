@@ -1,3 +1,9 @@
+import {
+  Priority,
+  Prisma,
+  TaskStatus,
+} from "@prisma/client";
+
 import { prisma } from "../config/database.js";
 import { getIO } from "../sockets/socket.js";
 
@@ -8,59 +14,82 @@ interface TaskFilters {
   to?: string;
 }
 
+const isTaskStatus = (value: string): value is TaskStatus => {
+  return Object.values(TaskStatus).includes(value as TaskStatus);
+};
+
+const isPriority = (value: string): value is Priority => {
+  return Object.values(Priority).includes(value as Priority);
+};
+
 export const getTasks = async (
   userId: number,
   role: string,
   filters: TaskFilters
 ) => {
-  const where: any = {};
+  const where: Prisma.TaskWhereInput = {};
 
-  /*
-   * DEVELOPER:
-   * Can only see tasks assigned to them.
-   */
+  // Developer can only see tasks assigned to themselves
   if (role === "DEVELOPER") {
     where.assignedDeveloperId = userId;
   }
 
-  /*
-   * PROJECT MANAGER:
-   * Can only see tasks from their own projects.
-   */
+  // Project Manager can only see tasks
+  // belonging to projects they created
   if (role === "PROJECT_MANAGER") {
     where.project = {
       createdById: userId,
     };
   }
 
-  /*
-   * ADMIN:
-   * No additional filter.
-   * Admin can see all tasks.
-   */
-
+  // Status filter
   if (filters.status) {
+    if (!isTaskStatus(filters.status)) {
+      throw new Error("Invalid task status");
+    }
+
     where.status = filters.status;
   }
 
+  // Priority filter
   if (filters.priority) {
+    if (!isPriority(filters.priority)) {
+      throw new Error("Invalid priority");
+    }
+
     where.priority = filters.priority;
   }
 
+  // Due date filter
   if (filters.from || filters.to) {
-    where.dueDate = {};
+    const dueDateFilter: Prisma.DateTimeFilter = {};
 
     if (filters.from) {
-      where.dueDate.gte = new Date(filters.from);
+      const fromDate = new Date(filters.from);
+
+      if (Number.isNaN(fromDate.getTime())) {
+        throw new Error("Invalid from date");
+      }
+
+      dueDateFilter.gte = fromDate;
     }
 
     if (filters.to) {
-      where.dueDate.lte = new Date(filters.to);
+      const toDate = new Date(filters.to);
+
+      if (Number.isNaN(toDate.getTime())) {
+        throw new Error("Invalid to date");
+      }
+
+      dueDateFilter.lte = toDate;
     }
+
+    where.dueDate = dueDateFilter;
   }
 
   const tasks = await prisma.task.findMany({
     where,
+
     include: {
       project: {
         select: {
@@ -84,30 +113,17 @@ export const getTasks = async (
     },
   });
 
-  /*
-   * Assignment requirement:
-   * Developer tasks should be sorted by:
-   *
-   * 1. Priority
-   * 2. Due date
-   */
-
-  const priorityOrder: Record<string, number> = {
-    CRITICAL: 1,
-    HIGH: 2,
-    MEDIUM: 3,
-    LOW: 4,
+  // Critical > High > Medium > Low
+  const priorityOrder: Record<Priority, number> = {
+    [Priority.CRITICAL]: 1,
+    [Priority.HIGH]: 2,
+    [Priority.MEDIUM]: 3,
+    [Priority.LOW]: 4,
   };
 
   tasks.sort((a, b) => {
-    const priorityA =
-      priorityOrder[a.priority] ?? 999;
-
-    const priorityB =
-      priorityOrder[b.priority] ?? 999;
-
     const priorityDifference =
-      priorityA - priorityB;
+      priorityOrder[a.priority] - priorityOrder[b.priority];
 
     if (priorityDifference !== 0) {
       return priorityDifference;
@@ -155,44 +171,30 @@ export const getTaskById = async (
     throw new Error("Task not found");
   }
 
-  /*
-   * ADMIN can access everything.
-   */
+  // Admin can access everything
   if (role === "ADMIN") {
     return task;
   }
 
-  /*
-   * PROJECT MANAGER can only access
-   * tasks belonging to their projects.
-   */
+  // PM can access tasks from projects they created
   if (role === "PROJECT_MANAGER") {
     if (task.project.createdById !== userId) {
-      throw new Error(
-        "You do not have access to this task"
-      );
+      throw new Error("You do not have access to this task");
     }
 
     return task;
   }
 
-  /*
-   * DEVELOPER can only access
-   * their assigned tasks.
-   */
+  // Developer can only access assigned tasks
   if (role === "DEVELOPER") {
     if (task.assignedDeveloperId !== userId) {
-      throw new Error(
-        "You do not have access to this task"
-      );
+      throw new Error("You do not have access to this task");
     }
 
     return task;
   }
 
-  throw new Error(
-    "You do not have access to this task"
-  );
+  throw new Error("You do not have access to this task");
 };
 
 export const createTask = async (
@@ -207,10 +209,7 @@ export const createTask = async (
     dueDate: string;
   }
 ) => {
-  /*
-   * 1. Check project exists
-   */
-
+  // Check project
   const project = await prisma.project.findUnique({
     where: {
       id: projectId,
@@ -221,67 +220,40 @@ export const createTask = async (
     throw new Error("Project not found");
   }
 
-  /*
-   * 2. PM can only manage their own projects
-   */
-
+  // PM can only create tasks in their own projects
   if (
     role === "PROJECT_MANAGER" &&
     project.createdById !== userId
   ) {
-    throw new Error(
-      "You do not have access to this project"
-    );
+    throw new Error("You do not have access to this project");
   }
 
-  /*
-   * 3. Developers cannot create tasks
-   */
-
+  // Developers cannot create tasks
   if (role === "DEVELOPER") {
-    throw new Error(
-      "Developers cannot create tasks"
-    );
+    throw new Error("Developers cannot create tasks");
   }
 
-  /*
-   * 4. Check assigned developer exists
-   */
-
+  // Check assigned developer
   const developer = await prisma.user.findUnique({
     where: {
       id: data.assignedDeveloperId,
     },
   });
 
-  if (
-    !developer ||
-    developer.role !== "DEVELOPER"
-  ) {
-    throw new Error(
-      "Assigned user is not a developer"
-    );
+  if (!developer || developer.role !== "DEVELOPER") {
+    throw new Error("Assigned user is not a developer");
   }
 
-  /*
-   * 5. Validate priority
-   */
-
-  const validPriorities = [
-    "LOW",
-    "MEDIUM",
-    "HIGH",
-    "CRITICAL",
-  ];
-
-  if (!validPriorities.includes(data.priority)) {
+  // Validate priority
+  if (!isPriority(data.priority)) {
     throw new Error("Invalid priority");
   }
 
-  /*
-   * 6. Validate due date
-   */
+  // Keep the validated enum value
+  // so Prisma receives Priority instead of string.
+  const priority: Priority = data.priority;
 
+  // Validate due date
   const dueDate = new Date(data.dueDate);
 
   if (Number.isNaN(dueDate.getTime())) {
@@ -289,47 +261,83 @@ export const createTask = async (
   }
 
   /*
-   * 7. Create task
+   * Create task and notification in the same
+   * database transaction.
    */
+  const result = await prisma.$transaction(async (tx) => {
+    // Create task
+    const task = await tx.task.create({
+      data: {
+        projectId,
+        title: data.title,
 
-  return prisma.task.create({
-    data: {
-      projectId,
+        ...(data.description !== undefined && {
+          description: data.description,
+        }),
 
-      title: data.title,
+        assignedDeveloperId: data.assignedDeveloperId,
 
-      ...(data.description !== undefined && {
-        description: data.description,
-      }),
+        priority,
 
-      assignedDeveloperId:
-        data.assignedDeveloperId,
+        dueDate,
 
-      priority: data.priority as any,
-
-      dueDate,
-
-      status: "TODO",
-    },
-
-    include: {
-      project: {
-        select: {
-          id: true,
-          name: true,
-          createdById: true,
-        },
+        status: TaskStatus.TODO,
       },
 
-      developer: {
-        select: {
-          id: true,
-          name: true,
-          email: true,
+      include: {
+        project: {
+          select: {
+            id: true,
+            name: true,
+            createdById: true,
+          },
+        },
+
+        developer: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
         },
       },
-    },
+    });
+
+    // Create notification for assigned developer
+    const notification = await tx.notification.create({
+      data: {
+        userId: data.assignedDeveloperId,
+        taskId: task.id,
+        projectId: project.id,
+        message: `You have been assigned Task #${task.id}: ${task.title}`,
+      },
+    });
+
+    return {
+      task,
+      notification,
+    };
   });
+
+  /*
+   * Send real-time notification to the assigned developer.
+   */
+  const io = getIO();
+
+  io.to(`developer:${data.assignedDeveloperId}`).emit(
+    "notification:new",
+    {
+      id: result.notification.id,
+      userId: result.notification.userId,
+      taskId: result.notification.taskId,
+      projectId: result.notification.projectId,
+      message: result.notification.message,
+      read: result.notification.read,
+      createdAt: result.notification.createdAt,
+    }
+  );
+
+  return result.task;
 };
 
 export const updateTask = async (
@@ -358,30 +366,54 @@ export const updateTask = async (
     throw new Error("Task not found");
   }
 
-  /*
-   * ADMIN can update any task.
-   *
-   * PROJECT MANAGER can only update
-   * tasks belonging to their projects.
-   *
-   * DEVELOPER cannot use this endpoint
-   * for general task editing.
-   */
-
+  // Only Admin or the PM who owns the project
+  // can update the task
   if (
     role !== "ADMIN" &&
     task.project.createdById !== userId
   ) {
-    throw new Error(
-      "You do not have access to this task"
-    );
+    throw new Error("You do not have access to this task");
   }
 
-  const updateData: any = {
-    ...data,
-  };
+  const updateData: Prisma.TaskUncheckedUpdateInput = {};
 
-  if (data.dueDate) {
+  if (data.title !== undefined) {
+    updateData.title = data.title;
+  }
+
+  if (data.description !== undefined) {
+    updateData.description = data.description;
+  }
+
+  // Validate developer if reassigned
+  if (data.assignedDeveloperId !== undefined) {
+    const developer = await prisma.user.findUnique({
+      where: {
+        id: data.assignedDeveloperId,
+      },
+    });
+
+    if (!developer || developer.role !== "DEVELOPER") {
+      throw new Error("Assigned user is not a developer");
+    }
+
+    updateData.assignedDeveloperId =
+      data.assignedDeveloperId;
+  }
+
+  // Validate priority
+  if (data.priority !== undefined) {
+    if (!isPriority(data.priority)) {
+      throw new Error("Invalid priority");
+    }
+
+    const priority: Priority = data.priority;
+
+    updateData.priority = priority;
+  }
+
+  // Validate due date
+  if (data.dueDate !== undefined) {
     const dueDate = new Date(data.dueDate);
 
     if (Number.isNaN(dueDate.getTime())) {
@@ -406,27 +438,13 @@ export const updateTaskStatus = async (
   role: string,
   newStatus: string
 ) => {
-  /*
-   * Manual status changes.
-   *
-   * OVERDUE is intentionally excluded because
-   * the background node-cron job should handle it.
-   */
-
-  const validStatuses = [
-    "TODO",
-    "IN_PROGRESS",
-    "IN_REVIEW",
-    "DONE",
-  ];
-
-  if (!validStatuses.includes(newStatus)) {
+  // OVERDUE must only be set by the background job
+  if (
+    !isTaskStatus(newStatus) ||
+    newStatus === TaskStatus.OVERDUE
+  ) {
     throw new Error("Invalid task status");
   }
-
-  /*
-   * Find the task first.
-   */
 
   const task = await prisma.task.findUnique({
     where: {
@@ -450,247 +468,144 @@ export const updateTaskStatus = async (
     throw new Error("Task not found");
   }
 
-  /*
-   * ROLE-BASED AUTHORIZATION
-   */
-
+  // Admin can update any task
   if (role === "ADMIN") {
-    /*
-     * Admin can update any task.
-     */
-  } else if (role === "PROJECT_MANAGER") {
-    /*
-     * PM can update tasks only inside
-     * projects created by that PM.
-     */
+    // Allowed
+  }
 
+  // PM can update tasks from their own projects
+  else if (role === "PROJECT_MANAGER") {
     if (task.project.createdById !== userId) {
-      throw new Error(
-        "You do not have access to this task"
-      );
+      throw new Error("You do not have access to this task");
     }
-  } else if (role === "DEVELOPER") {
-    /*
-     * Developer can update only
-     * tasks assigned to them.
-     */
+  }
 
+  // Developer can only update assigned tasks
+  else if (role === "DEVELOPER") {
     if (task.assignedDeveloperId !== userId) {
       throw new Error(
         "You can only update tasks assigned to you"
       );
     }
-  } else {
-    throw new Error(
-      "You do not have access to this task"
-    );
   }
 
-  /*
-   * Don't create duplicate activity
-   * if the status hasn't changed.
-   */
+  else {
+    throw new Error("You do not have access to this task");
+  }
 
   if (task.status === newStatus) {
-    throw new Error(
-      "Task is already in this status"
-    );
+    throw new Error("Task is already in this status");
   }
 
-  /*
-   * DATABASE TRANSACTION
-   *
-   * 1. Update task
-   * 2. Create ActivityLog
-   * 3. Create Notification when required
-   *
-   * Either everything succeeds or everything
-   * rolls back.
-   */
+  const result = await prisma.$transaction(async (tx) => {
+    // Update task status
+    const updatedTask = await tx.task.update({
+      where: {
+        id: taskId,
+      },
 
-  const result = await prisma.$transaction(
-    async (tx) => {
-      /*
-       * Update task status
-       */
+      data: {
+        status: newStatus,
+      },
 
-      const updatedTask =
-        await tx.task.update({
-          where: {
-            id: taskId,
+      include: {
+        project: {
+          select: {
+            id: true,
+            name: true,
+            createdById: true,
           },
+        },
 
-          data: {
-            status: newStatus as any,
+        developer: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
           },
+        },
+      },
+    });
 
-          include: {
-            project: {
-              select: {
-                id: true,
-                name: true,
-                createdById: true,
-              },
-            },
+    // Create activity log
+    const activity = await tx.activityLog.create({
+      data: {
+        taskId: task.id,
+        projectId: task.projectId,
+        userId,
 
-            developer: {
-              select: {
-                id: true,
-                name: true,
-                email: true,
-              },
-            },
-          },
-        });
+        fromStatus: task.status,
+        toStatus: newStatus,
+      },
+    });
 
-      /*
-       * Create activity log
-       */
+    let notification = null;
 
-      const activity =
-        await tx.activityLog.create({
-          data: {
-            taskId: task.id,
-            projectId: task.projectId,
-            userId,
+    // Notify PM when task moves to IN_REVIEW
+    if (
+      newStatus === TaskStatus.IN_REVIEW &&
+      task.project.createdById !== userId
+    ) {
+      notification = await tx.notification.create({
+        data: {
+          userId: task.project.createdById,
+          taskId: task.id,
+          projectId: task.projectId,
 
-            fromStatus: task.status,
-            toStatus: newStatus as any,
-          },
-        });
-
-      /*
-       * Notification
-       *
-       * If someone other than the PM moves
-       * the task to IN_REVIEW, notify the PM.
-       */
-
-      let notification = null;
-
-      if (
-        newStatus === "IN_REVIEW" &&
-        task.project.createdById !== userId
-      ) {
-        notification =
-          await tx.notification.create({
-            data: {
-              userId:
-                task.project.createdById,
-
-              taskId: task.id,
-
-              projectId: task.projectId,
-
-              message: `${task.developer.name} moved Task #${task.id} to In Review`,
-            },
-          });
-      }
-
-      return {
-        updatedTask,
-        activity,
-        notification,
-      };
+          message: `${task.developer.name} moved Task #${task.id} to In Review`,
+        },
+      });
     }
-  );
 
-  /*
-   * REAL-TIME ACTIVITY
-   *
-   * Get the Socket.IO server only after
-   * the database transaction succeeds.
-   */
+    return {
+      updatedTask,
+      activity,
+      notification,
+    };
+  });
 
   const io = getIO();
 
   const activityPayload = {
     id: result.activity.id,
-
     taskId: result.activity.taskId,
-
     projectId: result.activity.projectId,
-
     userId: result.activity.userId,
-
     fromStatus: result.activity.fromStatus,
-
     toStatus: result.activity.toStatus,
-
     createdAt: result.activity.createdAt,
   };
 
-  /*
-   * ADMIN ROOM
-   *
-   * All admins receive global activity.
-   */
-
+  // Admin activity room
   io.to("global:admins").emit(
     "activity:new",
     activityPayload
   );
 
-  /*
-   * PROJECT MANAGER ROOM
-   *
-   * Only the PM who owns this project
-   * receives the activity.
-   */
-
-  io.to(
-    `pm:${task.project.createdById}`
-  ).emit(
+  // Project manager activity room
+  io.to(`pm:${task.project.createdById}`).emit(
     "activity:new",
     activityPayload
   );
 
-  /*
-   * DEVELOPER ROOM
-   *
-   * The developer assigned to this task
-   * receives the activity.
-   */
-
-  io.to(
-    `developer:${task.assignedDeveloperId}`
-  ).emit(
+  // Developer activity room
+  io.to(`developer:${task.assignedDeveloperId}`).emit(
     "activity:new",
     activityPayload
   );
 
-  /*
-   * REAL-TIME NOTIFICATION
-   *
-   * If a notification was created,
-   * immediately send it to the PM.
-   */
-
+  // Notification for PM
   if (result.notification) {
-    io.to(
-      `pm:${task.project.createdById}`
-    ).emit(
+    io.to(`pm:${task.project.createdById}`).emit(
       "notification:new",
       {
         id: result.notification.id,
-
-        userId:
-          result.notification.userId,
-
-        taskId:
-          result.notification.taskId,
-
-        projectId:
-          result.notification.projectId,
-
-        message:
-          result.notification.message,
-
-        read:
-          result.notification.read,
-
-        createdAt:
-          result.notification.createdAt,
+        userId: result.notification.userId,
+        taskId: result.notification.taskId,
+        projectId: result.notification.projectId,
+        message: result.notification.message,
+        read: result.notification.read,
+        createdAt: result.notification.createdAt,
       }
     );
   }
