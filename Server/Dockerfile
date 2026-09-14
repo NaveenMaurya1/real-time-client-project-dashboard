@@ -8,7 +8,7 @@ RUN npm ci
 
 COPY . .
 
-ENV DATABASE_URL="postgresql://postgres:postgres@postgres:5432/client_dashboard?schema=public"
+# ENV DATABASE_URL="postgresql://postgres:postgres@postgres:5432/client_dashboard?schema=public"
 
 RUN npx prisma generate
 
